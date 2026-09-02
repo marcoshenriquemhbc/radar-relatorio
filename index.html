@@ -223,6 +223,8 @@
         <div id="periods-cadence-pills"></div>
         <div class="section-header"><h3>Períodos <span id="periods-auto-note" style="text-transform:none;font-weight:400;color:var(--ink-faint);display:none;">— preenchido automaticamente a partir das semanas</span></h3><button class="btn btn-primary" id="new-period-btn">+ Novo período</button></div>
         <div class="row-list" id="periods-list"></div>
+        <div class="section-header" style="margin-top:22px;"><h3>Resumo geral (marketing + comercial)</h3></div>
+        <div class="card-block"><div class="kv-grid" id="periods-summary-grid"></div></div>
       </div>
     </div>
     <div class="ctab-panel" id="ctab-report">
@@ -606,6 +608,7 @@ function renderPeriodsList() {
   const wrap = document.getElementById('periods-list');
   wrap.innerHTML = '';
   const list = periodsForCadence(state.activeCadence).slice().reverse(); // cronológico, mais antigo primeiro
+  renderPeriodsGeneralSummary(list);
   if (list.length === 0) { wrap.innerHTML = '<div class="empty-hint">Nenhum período cadastrado nessa cadência ainda.</div>'; return; }
 
   const rows = list.map((p, i) => {
@@ -654,6 +657,43 @@ function renderPeriodsList() {
   `;
   wrap.innerHTML = html;
   wrap.querySelectorAll('tr[data-period-id]').forEach(tr => tr.addEventListener('click', () => openPeriodDetail(tr.dataset.periodId)));
+}
+
+function renderPeriodsGeneralSummary(list) {
+  const totals = { spend: 0, impressions: 0, clicks: 0, leads: 0, qualified_leads: 0, meetings_scheduled: 0, meetings_held: 0, proposals: 0, sales: 0, revenue: 0 };
+  list.forEach(p => {
+    const agg = aggregateMarketing(entriesFor(p));
+    totals.spend += agg.spend; totals.impressions += agg.impressions; totals.clicks += agg.clicks; totals.leads += agg.leads;
+    totals.qualified_leads += Number(p.qualified_leads || 0); totals.meetings_scheduled += Number(p.meetings_scheduled || 0);
+    totals.meetings_held += Number(p.meetings_held || 0); totals.proposals += Number(p.proposals || 0);
+    totals.sales += Number(p.sales || 0); totals.revenue += Number(p.revenue || 0);
+  });
+  const ctr = safeDiv(totals.clicks, totals.impressions);
+  const cpc = safeDiv(totals.spend, totals.clicks);
+  const costPerConv = safeDiv(totals.spend, totals.leads);
+  const cac = safeDiv(totals.spend, totals.sales);
+  const roas = safeDiv(totals.revenue, totals.spend);
+  const avgTicket = safeDiv(totals.revenue, totals.sales);
+  const items = [
+    ['Períodos somados', list.length],
+    ['Investimento total', fmtMoney(totals.spend)],
+    ['Impressões', Math.round(totals.impressions).toLocaleString('pt-BR')],
+    ['Cliques', Math.round(totals.clicks).toLocaleString('pt-BR')],
+    ['Conversões', Math.round(totals.leads).toLocaleString('pt-BR')],
+    ['CTR médio', ctr !== null ? (ctr * 100).toFixed(2) + '%' : '—'],
+    ['CPC médio', cpc !== null ? fmtMoney(cpc) : '—'],
+    ['Custo por conversão', costPerConv !== null ? fmtMoney(costPerConv) : '—'],
+    ['Qualificados', totals.qualified_leads],
+    ['Reuniões marcadas', totals.meetings_scheduled],
+    ['Reuniões realizadas', totals.meetings_held],
+    ['Propostas', totals.proposals],
+    ['Vendas', totals.sales],
+    ['Receita total', fmtMoney(totals.revenue)],
+    ['CAC', cac !== null ? fmtMoney(cac) : '—'],
+    ['ROAS', roas !== null ? roas.toFixed(2) + 'x' : '—'],
+    ['Ticket médio', avgTicket !== null ? fmtMoney(avgTicket) : '—'],
+  ];
+  document.getElementById('periods-summary-grid').innerHTML = items.map(([label, val]) => `<div class="kv-item"><div class="kv-label">${label}</div><div class="kv-val">${val}</div></div>`).join('');
 }
 
 document.getElementById('new-period-btn').addEventListener('click', () => openPeriodModal(null));
