@@ -4,7 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, viewport-fit=cover">
 <title>RADAR</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <meta name="theme-color" content="#14213D">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="RADAR">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <style>
@@ -286,12 +293,12 @@
     <div class="field-row"><label class="flabel">Data de início</label><input type="date" id="p-start"></div>
     <div class="preview-box" id="p-preview" style="display:none;"></div>
     <div class="field-row three-col">
-      <div><label class="flabel">Qualificados</label><input type="number" id="p-qualified" step="1"></div>
+      <div><label class="flabel">Leads qualificados</label><input type="number" id="p-qualified" step="1"></div>
       <div><label class="flabel">Reuniões marcadas</label><input type="number" id="p-meetings-sched" step="1"></div>
       <div><label class="flabel">Reuniões realizadas</label><input type="number" id="p-meetings-held" step="1"></div>
     </div>
     <div class="field-row three-col">
-      <div><label class="flabel">Propostas</label><input type="number" id="p-proposals" step="1"></div>
+      <div><label class="flabel">Propostas enviadas</label><input type="number" id="p-proposals" step="1"></div>
       <div><label class="flabel">Vendas</label><input type="number" id="p-sales" step="1"></div>
       <div><label class="flabel">Receita (R$)</label><input type="number" id="p-revenue" step="0.01"></div>
     </div>
@@ -628,7 +635,7 @@ function renderPeriodsList() {
     <div class="wide-table-wrap"><table class="ptable">
       <thead><tr>
         <th>Período</th><th>Início</th><th>Fim</th><th>Investimento</th><th>Impressões</th><th>Cliques</th>
-        <th>Conversões</th><th>CTR</th><th>CPC</th><th>Custo/Conv.</th>
+        <th>Conversões (leads/vendas/visitas)</th><th>CTR</th><th>CPC</th><th>Custo/Conv.</th>
         <th>Var. Invest.</th><th>Var. Cliques</th><th>Var. Conv.</th><th>Var. Custo/Conv.</th>
         <th>Vendas</th><th>Receita</th>
       </tr></thead>
@@ -679,14 +686,14 @@ function renderPeriodsGeneralSummary(list) {
     ['Investimento total', fmtMoney(totals.spend)],
     ['Impressões', Math.round(totals.impressions).toLocaleString('pt-BR')],
     ['Cliques', Math.round(totals.clicks).toLocaleString('pt-BR')],
-    ['Conversões', Math.round(totals.leads).toLocaleString('pt-BR')],
+    ['Conversões (leads/vendas/visitas)', Math.round(totals.leads).toLocaleString('pt-BR')],
     ['CTR médio', ctr !== null ? (ctr * 100).toFixed(2) + '%' : '—'],
     ['CPC médio', cpc !== null ? fmtMoney(cpc) : '—'],
     ['Custo por conversão', costPerConv !== null ? fmtMoney(costPerConv) : '—'],
-    ['Qualificados', totals.qualified_leads],
+    ['Leads qualificados', totals.qualified_leads],
     ['Reuniões marcadas', totals.meetings_scheduled],
     ['Reuniões realizadas', totals.meetings_held],
-    ['Propostas', totals.proposals],
+    ['Propostas enviadas', totals.proposals],
     ['Vendas', totals.sales],
     ['Receita total', fmtMoney(totals.revenue)],
     ['CAC', cac !== null ? fmtMoney(cac) : '—'],
@@ -743,6 +750,15 @@ document.getElementById('save-period-btn').addEventListener('click', async () =>
     const end = computeEndDate(start, existing.cadence);
     await sb.from('periods').update({ ...commercial, period_start: start, period_end: end }).eq('id', state.editingPeriodId);
     await loadPeriods();
+    if (state.activePeriodId === state.editingPeriodId) {
+      const updated = state.periods.find(x => x.id === state.editingPeriodId);
+      if (updated) {
+        document.getElementById('period-detail-name').textContent = `${updated.period_label} (${CADENCE_DEFS.find(c => c.key === updated.cadence).label})`;
+        document.getElementById('period-detail-dates').textContent = `${fmtDate(updated.period_start)} — ${fmtDate(updated.period_end)}`;
+        renderCommercialGrid(updated);
+        renderPeriodSummary(updated);
+      }
+    }
   } else {
     const cadence = state.activeCadence;
     const end = computeEndDate(start, cadence);
@@ -779,11 +795,11 @@ function renderPeriodSummary(p) {
     ['Investimento total', fmtMoney(agg.spend)],
     ['Impressões', Math.round(agg.impressions).toLocaleString('pt-BR')],
     ['Cliques', Math.round(agg.clicks).toLocaleString('pt-BR')],
-    ['Conversões (todas as mídias)', Math.round(agg.leads).toLocaleString('pt-BR')],
+    ['Conversões (leads/vendas/visitas)', Math.round(agg.leads).toLocaleString('pt-BR')],
     ['CTR', derived.leads && agg.impressions ? (safeDiv(agg.clicks, agg.impressions) * 100).toFixed(2) + '%' : '—'],
     ['CPC', safeDiv(agg.spend, agg.clicks) !== null ? fmtMoney(safeDiv(agg.spend, agg.clicks)) : '—'],
     ['Custo por conversão', derived.cpl !== null ? fmtMoney(derived.cpl) : '—'],
-    ['Qualificados', p.qualified_leads],
+    ['Leads qualificados', p.qualified_leads],
     ['Vendas', p.sales],
     ['Receita', fmtMoney(p.revenue)],
     ['CAC', derived.cac !== null ? fmtMoney(derived.cac) : '—'],
@@ -795,8 +811,8 @@ function renderPeriodSummary(p) {
 function renderCommercialGrid(p) {
   const grid = document.getElementById('period-commercial-grid');
   const items = [
-    ['Qualificados', p.qualified_leads], ['Reuniões marcadas', p.meetings_scheduled], ['Reuniões realizadas', p.meetings_held],
-    ['Propostas', p.proposals], ['Vendas', p.sales], ['Receita', fmtMoney(p.revenue)],
+    ['Leads qualificados', p.qualified_leads], ['Reuniões marcadas', p.meetings_scheduled], ['Reuniões realizadas', p.meetings_held],
+    ['Propostas enviadas', p.proposals], ['Vendas', p.sales], ['Receita', fmtMoney(p.revenue)],
   ];
   grid.innerHTML = items.map(([label, val]) => `<div class="kv-item"><div class="kv-label">${label}</div><div class="kv-val">${val}</div></div>`).join('');
 }
@@ -947,7 +963,7 @@ const OVERVIEW_METRIC_DEFS = [
   { key: 'qualified_leads', label: 'Leads qualificados', fmt: 'int', direction: 'up' },
   { key: 'meetings_scheduled', label: 'Reuniões marcadas', fmt: 'int', direction: 'up' },
   { key: 'meetings_held', label: 'Reuniões realizadas', fmt: 'int', direction: 'up' },
-  { key: 'proposals', label: 'Propostas', fmt: 'int', direction: 'up' },
+  { key: 'proposals', label: 'Propostas enviadas', fmt: 'int', direction: 'up' },
   { key: 'sales', label: 'Vendas', fmt: 'int', direction: 'up' },
   { key: 'revenue', label: 'Receita', fmt: 'money', direction: 'up' },
   { key: 'cpl', label: 'CPL', fmt: 'money', direction: 'down' },
@@ -1267,6 +1283,11 @@ document.getElementById('delete-confirm-btn').addEventListener('click', () => re
 document.getElementById('delete-confirm-cancel-btn').addEventListener('click', () => resolveDeleteConfirm(false));
 document.getElementById('delete-confirm-close-x').addEventListener('click', () => resolveDeleteConfirm(false));
 document.getElementById('delete-confirm-modal').addEventListener('click', (e) => { if (e.target.id === 'delete-confirm-modal') resolveDeleteConfirm(false); });
+
+/* ---------------- PWA ---------------- */
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+}
 </script>
 </body>
 </html>
