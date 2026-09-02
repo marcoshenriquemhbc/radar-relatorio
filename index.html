@@ -221,7 +221,7 @@
     <div class="ctab-panel active" id="ctab-periods">
       <div class="panel-body">
         <div id="periods-cadence-pills"></div>
-        <div class="section-header"><h3>Períodos</h3><button class="btn btn-primary" id="new-period-btn">+ Novo período</button></div>
+        <div class="section-header"><h3>Períodos <span id="periods-auto-note" style="text-transform:none;font-weight:400;color:var(--ink-faint);display:none;">— preenchido automaticamente a partir das semanas</span></h3><button class="btn btn-primary" id="new-period-btn">+ Novo período</button></div>
         <div class="row-list" id="periods-list"></div>
       </div>
     </div>
@@ -258,6 +258,10 @@
       </div>
       <div class="section-header"><h3>Marketing por mídia</h3><button class="btn btn-sm" id="new-entry-btn">+ Adicionar mídia</button></div>
       <div class="row-list" id="entries-list"></div>
+      <div class="section-header" style="margin-top:20px;"><h3>Resumo geral do período</h3></div>
+      <div class="card-block">
+        <div class="kv-grid" id="period-summary-grid"></div>
+      </div>
     </div>
   </div>
 </div>
@@ -501,8 +505,50 @@ document.querySelectorAll('.ctab-btn').forEach(btn => {
 
 /* ---------------- Cadence helpers ---------------- */
 
+function entriesFor(period) { return period._entries || state.entriesByPeriod[period.id] || []; }
+
 function periodsForCadence(cadence) {
-  return state.periods.filter(p => p.cadence === cadence).sort((a, b) => (a.period_end < b.period_end ? 1 : -1));
+  if (cadence === 'semanal') return state.periods.filter(p => p.cadence === 'semanal').sort((a, b) => (a.period_end < b.period_end ? 1 : -1));
+  return computeVirtualPeriods(cadence).slice().reverse();
+}
+
+function computeVirtualPeriods(cadence) {
+  const weeksAsc = state.periods.filter(p => p.cadence === 'semanal').sort((a, b) => (a.period_start > b.period_start ? 1 : -1));
+  if (weeksAsc.length === 0) return [];
+  if (cadence === 'quinzenal') {
+    const groups = [];
+    for (let i = 0; i < weeksAsc.length; i += 2) groups.push(weeksAsc.slice(i, i + 2));
+    return groups.map((weeks, idx) => buildVirtualPeriod(weeks, `Quinzena ${idx + 1}${weeks.length < 2 ? ' (parcial)' : ''}`, 'quinzenal'));
+  }
+  if (cadence === 'mensal') {
+    const byMonth = {}; const order = [];
+    weeksAsc.forEach(w => {
+      const d = new Date(w.period_start + 'T00:00:00');
+      const key = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+      if (!byMonth[key]) { byMonth[key] = []; order.push(key); }
+      byMonth[key].push(w);
+    });
+    return order.map(key => {
+      const [y, m] = key.split('-');
+      const monthName = new Date(Number(y), Number(m) - 1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+      return buildVirtualPeriod(byMonth[key], monthName.charAt(0).toUpperCase() + monthName.slice(1), 'mensal');
+    });
+  }
+  return [];
+}
+
+function buildVirtualPeriod(weeks, label, cadence) {
+  const start = weeks.reduce((min, w) => (w.period_start < min ? w.period_start : min), weeks[0].period_start);
+  const end = weeks.reduce((max, w) => (w.period_end > max ? w.period_end : max), weeks[0].period_end);
+  const sum = (key) => weeks.reduce((s, w) => s + Number(w[key] || 0), 0);
+  const entries = weeks.reduce((acc, w) => acc.concat(entriesFor(w)), []);
+  return {
+    id: 'virtual-' + cadence + '-' + weeks.map(w => w.id).join('-'), cadence,
+    period_label: label, period_start: start, period_end: end,
+    qualified_leads: sum('qualified_leads'), meetings_scheduled: sum('meetings_scheduled'), meetings_held: sum('meetings_held'),
+    proposals: sum('proposals'), sales: sum('sales'), revenue: sum('revenue'),
+    notes: '', _entries: entries, _sourceWeeks: weeks,
+  };
 }
 
 function renderCadencePills(containerId, onSelect) {
@@ -537,8 +583,15 @@ async function loadPeriods() {
       state.entriesByPeriod[e.period_id].push(e);
     });
   }
-  renderCadencePills('periods-cadence-pills', () => renderPeriodsList());
+  renderCadencePills('periods-cadence-pills', () => { renderPeriodsList(); updatePeriodsControlsForCadence(); });
   renderPeriodsList();
+  updatePeriodsControlsForCadence();
+}
+
+function updatePeriodsControlsForCadence() {
+  const isManual = state.activeCadence === 'semanal';
+  document.getElementById('new-period-btn').style.display = isManual ? 'inline-flex' : 'none';
+  document.getElementById('periods-auto-note').style.display = isManual ? 'none' : 'inline';
 }
 
 function fmtDeltaCell(curr, prev, invert) {
@@ -556,15 +609,17 @@ function renderPeriodsList() {
   if (list.length === 0) { wrap.innerHTML = '<div class="empty-hint">Nenhum período cadastrado nessa cadência ainda.</div>'; return; }
 
   const rows = list.map((p, i) => {
-    const agg = aggregateMarketing(state.entriesByPeriod[p.id] || []);
+    const agg = aggregateMarketing(entriesFor(p));
     const ctr = safeDiv(agg.clicks, agg.impressions);
     const cpc = safeDiv(agg.spend, agg.clicks);
     const costPerConv = safeDiv(agg.spend, agg.leads);
     const prevP = i > 0 ? list[i - 1] : null;
-    const prevAgg = prevP ? aggregateMarketing(state.entriesByPeriod[prevP.id] || []) : null;
+    const prevAgg = prevP ? aggregateMarketing(entriesFor(prevP)) : null;
     const prevCostPerConv = prevAgg ? safeDiv(prevAgg.spend, prevAgg.leads) : null;
     return { p, agg, ctr, cpc, costPerConv, prevAgg, prevCostPerConv };
   });
+
+  const isReal = (id) => !String(id).startsWith('virtual-');
 
   const html = `
     <div class="wide-table-wrap"><table class="ptable">
@@ -576,7 +631,7 @@ function renderPeriodsList() {
       </tr></thead>
       <tbody>
         ${rows.map(r => `
-          <tr class="clickable" data-period-id="${r.p.id}">
+          <tr class="${isReal(r.p.id) ? 'clickable' : ''}" ${isReal(r.p.id) ? `data-period-id="${r.p.id}"` : ''}>
             <td class="plabel">${escapeHtml(r.p.period_label)}</td>
             <td>${fmtDate(r.p.period_start)}</td>
             <td>${fmtDate(r.p.period_end)}</td>
@@ -674,6 +729,27 @@ async function openPeriodDetail(periodId) {
   document.getElementById('period-detail-dates').textContent = `${fmtDate(p.period_start)} — ${fmtDate(p.period_end)}`;
   renderCommercialGrid(p);
   renderEntriesList(periodId);
+  renderPeriodSummary(p);
+}
+
+function renderPeriodSummary(p) {
+  const agg = aggregateMarketing(entriesFor(p));
+  const derived = computeOverviewDerived(p, agg);
+  const items = [
+    ['Investimento total', fmtMoney(agg.spend)],
+    ['Impressões', Math.round(agg.impressions).toLocaleString('pt-BR')],
+    ['Cliques', Math.round(agg.clicks).toLocaleString('pt-BR')],
+    ['Conversões (todas as mídias)', Math.round(agg.leads).toLocaleString('pt-BR')],
+    ['CTR', derived.leads && agg.impressions ? (safeDiv(agg.clicks, agg.impressions) * 100).toFixed(2) + '%' : '—'],
+    ['CPC', safeDiv(agg.spend, agg.clicks) !== null ? fmtMoney(safeDiv(agg.spend, agg.clicks)) : '—'],
+    ['Custo por conversão', derived.cpl !== null ? fmtMoney(derived.cpl) : '—'],
+    ['Qualificados', p.qualified_leads],
+    ['Vendas', p.sales],
+    ['Receita', fmtMoney(p.revenue)],
+    ['CAC', derived.cac !== null ? fmtMoney(derived.cac) : '—'],
+    ['ROAS', derived.roas !== null ? derived.roas.toFixed(2) + 'x' : '—'],
+  ];
+  document.getElementById('period-summary-grid').innerHTML = items.map(([label, val]) => `<div class="kv-item"><div class="kv-label">${label}</div><div class="kv-val">${val}</div></div>`).join('');
 }
 
 function renderCommercialGrid(p) {
@@ -757,6 +833,7 @@ document.getElementById('save-entry-btn').addEventListener('click', async () => 
   closeModal('entry-modal');
   await loadPeriods();
   renderEntriesList(state.activePeriodId);
+  renderPeriodSummary(state.periods.find(x => x.id === state.activePeriodId));
 });
 
 document.getElementById('delete-entry-btn').addEventListener('click', async () => {
@@ -765,6 +842,7 @@ document.getElementById('delete-entry-btn').addEventListener('click', async () =
   closeModal('entry-modal');
   await loadPeriods();
   renderEntriesList(state.activePeriodId);
+  renderPeriodSummary(state.periods.find(x => x.id === state.activePeriodId));
 });
 
 /* ---------------- Platform helpers ---------------- */
@@ -780,7 +858,7 @@ function platformLabelOf(entry) { return entry.platform === 'outra' ? (entry.cus
 
 function availablePlatformViews() {
   const map = {};
-  periodsForCadence(state.activeCadence).forEach(p => (state.entriesByPeriod[p.id] || []).forEach(e => {
+  periodsForCadence(state.activeCadence).forEach(p => entriesFor(p).forEach(e => {
     const key = platformKeyOf(e);
     if (!map[key]) map[key] = platformLabelOf(e);
   }));
@@ -897,17 +975,17 @@ function buildReport() {
   const ascPeriods = cadencePeriods.slice().reverse();
 
   if (state.activeReportView === 'overview') {
-    const currAgg = aggregateMarketing(state.entriesByPeriod[current.id] || []);
-    const prevAgg = previous ? aggregateMarketing(state.entriesByPeriod[previous.id] || []) : null;
+    const currAgg = aggregateMarketing(entriesFor(current));
+    const prevAgg = previous ? aggregateMarketing(entriesFor(previous)) : null;
     const currDerived = computeOverviewDerived(current, currAgg);
     const prevDerived = previous ? computeOverviewDerived(previous, prevAgg) : null;
     const metrics = buildMetricsRows(OVERVIEW_METRIC_DEFS, currDerived, prevDerived || {});
     const bullets = buildBullets(currDerived, prevDerived);
     const trend = ascPeriods.map(p => {
-      const agg = aggregateMarketing(state.entriesByPeriod[p.id] || []);
+      const agg = aggregateMarketing(entriesFor(p));
       return { label: p.period_label, spend: agg.spend, leads: agg.leads, sales: p.sales, revenue: p.revenue, roas: safeDiv(p.revenue, agg.spend) };
     });
-    const mediaBreakdown = (state.entriesByPeriod[current.id] || []).reduce((acc, e) => {
+    const mediaBreakdown = entriesFor(current).reduce((acc, e) => {
       const key = platformKeyOf(e); const label = platformLabelOf(e);
       if (!acc[key]) acc[key] = { label, spend: 0 };
       acc[key].spend += Number(e.spend || 0);
@@ -917,8 +995,8 @@ function buildReport() {
   } else {
     const key = state.activeReportView;
     const label = (availablePlatformViews().find(v => v.key === key) || {}).label || key;
-    const currEntries = (state.entriesByPeriod[current.id] || []).filter(e => platformKeyOf(e) === key);
-    const prevEntries = previous ? (state.entriesByPeriod[previous.id] || []).filter(e => platformKeyOf(e) === key) : [];
+    const currEntries = entriesFor(current).filter(e => platformKeyOf(e) === key);
+    const prevEntries = previous ? entriesFor(previous).filter(e => platformKeyOf(e) === key) : [];
     const currAgg = computePlatformDerived(aggregateMarketing(currEntries));
     const prevAgg = previous ? computePlatformDerived(aggregateMarketing(prevEntries)) : null;
     const dominantType = dominantConversionType(currEntries.length ? currEntries : prevEntries);
@@ -928,7 +1006,7 @@ function buildReport() {
       return m;
     });
     const trend = ascPeriods.map(p => {
-      const entries = (state.entriesByPeriod[p.id] || []).filter(e => platformKeyOf(e) === key);
+      const entries = entriesFor(p).filter(e => platformKeyOf(e) === key);
       const agg = aggregateMarketing(entries);
       return { label: p.period_label, spend: agg.spend, cpl: safeDiv(agg.spend, agg.leads) };
     });
