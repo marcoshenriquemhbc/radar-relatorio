@@ -58,6 +58,25 @@
 
   /* home */
   #home-body{padding:20px 22px;max-width:800px;width:100%;margin:0 auto;}
+  .wide-table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:10px;background:var(--surface);}
+  table.ptable{width:100%;border-collapse:collapse;font-size:12.5px;white-space:nowrap;}
+  table.ptable th{text-align:left;font-size:10px;text-transform:uppercase;color:var(--ink-faint);padding:8px 10px;border-bottom:1px solid var(--border);background:var(--surface-2);position:sticky;top:0;}
+  table.ptable td{padding:8px 10px;border-bottom:1px solid var(--surface-2);}
+  table.ptable tr:last-child td{border-bottom:none;}
+  table.ptable tr.clickable{cursor:pointer;}
+  table.ptable tr.clickable:hover{background:var(--surface-2);}
+  table.ptable td.plabel{font-weight:700;}
+  .report-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px;flex-wrap:wrap;}
+  .print-only{display:none;}
+  @media print{
+    .no-print{display:none !important;}
+    html,body{height:auto !important;overflow:visible !important;background:#fff !important;}
+    .view.active{overflow:visible !important;}
+    .ctab-panel.active{overflow:visible !important;}
+    .panel-body{max-width:100% !important;}
+    .print-only{display:block;font-size:11px;color:#666;margin-bottom:10px;}
+    .chart-box{height:170px !important;}
+  }
   .section-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;}
   .section-header h3{margin:0;font-size:13px;text-transform:uppercase;letter-spacing:.4px;color:var(--ink-muted);}
   .row-list{display:flex;flex-direction:column;gap:8px;}
@@ -84,7 +103,7 @@
   .ctab-btn.active{color:var(--accent);border-color:var(--accent);}
   .ctab-panel{display:none;flex:1;min-height:0;overflow-y:auto;}
   .ctab-panel.active{display:flex;flex-direction:column;}
-  .panel-body{padding:20px 22px;max-width:800px;width:100%;margin:0 auto;}
+  .panel-body{padding:20px 22px;max-width:1120px;width:100%;margin:0 auto;}
 
   .card-block{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:16px;}
   .summary-text{font-size:13.5px;line-height:1.6;color:var(--ink);}
@@ -170,7 +189,7 @@
 </div>
 
 <div id="app">
-  <div id="topbar">
+  <div id="topbar" class="no-print">
     <h1>RADAR</h1>
     <button class="btn btn-ghost" id="signout-btn">Sair</button>
   </div>
@@ -189,12 +208,12 @@
       <div class="left"><button class="back-btn" data-back="home">← Voltar</button>
         <div><h2 id="client-detail-name"></h2><div class="sub" id="client-detail-niche"></div></div>
       </div>
-      <div class="subview-actions">
+      <div class="subview-actions no-print">
         <button class="btn" id="edit-client-btn">Editar</button>
         <button class="btn btn-danger" id="delete-client-btn">Excluir</button>
       </div>
     </div>
-    <div id="client-tabs">
+    <div id="client-tabs" class="no-print">
       <button class="ctab-btn active" data-ctab="periods">Períodos</button>
       <button class="ctab-btn" data-ctab="report">Relatório</button>
       <button class="ctab-btn" data-ctab="chat">Conversar com a IA</button>
@@ -289,9 +308,17 @@
       </select>
     </div>
     <div class="field-row" id="entry-custom-name-row" style="display:none;"><label class="flabel">Nome da plataforma</label><input type="text" id="entry-custom-name-input" placeholder="Ex: LinkedIn Ads"></div>
+    <div class="field-row"><label class="flabel">Tipo de conversão</label>
+      <select id="entry-conversion-type-input">
+        <option value="lead">Lead</option>
+        <option value="compra">Compra</option>
+        <option value="mensagem">Mensagem</option>
+        <option value="trafego">Tráfego (visitas)</option>
+      </select>
+    </div>
     <div class="field-row two-col">
       <div><label class="flabel">Investimento (R$)</label><input type="number" id="e-spend" step="0.01"></div>
-      <div><label class="flabel">Leads</label><input type="number" id="e-leads" step="1"></div>
+      <div><label class="flabel" id="e-leads-label">Conversões</label><input type="number" id="e-leads" step="1"></div>
     </div>
     <div class="field-row three-col">
       <div><label class="flabel">Impressões</label><input type="number" id="e-impressions" step="1"></div>
@@ -326,6 +353,8 @@ const PLATFORM_LABELS = { google_ads: 'Google Ads', meta_ads: 'Meta Ads', tiktok
 const PLATFORM_ORDER = ['google_ads', 'meta_ads', 'tiktok_ads', 'chatgpt_ads'];
 const CADENCE_DEFS = [{ key: 'semanal', label: 'Semanal', unit: 'Semana' }, { key: 'quinzenal', label: 'Quinzenal', unit: 'Quinzena' }, { key: 'mensal', label: 'Mensal', unit: 'Mês' }];
 const CADENCE_UNIT = { semanal: 'Semana', quinzenal: 'Quinzena', mensal: 'Mês' };
+const CONVERSION_COUNT_LABEL = { lead: 'Leads', compra: 'Compras', mensagem: 'Mensagens', trafego: 'Visitas' };
+const CONVERSION_COST_LABEL = { lead: 'Custo por Lead', compra: 'Custo por Compra', mensagem: 'Custo por Mensagem', trafego: 'Custo por Visita' };
 
 let state = {
   user: null,
@@ -477,7 +506,7 @@ function periodsForCadence(cadence) {
 }
 
 function renderCadencePills(containerId, onSelect) {
-  const html = `<div class="cadence-pills">${CADENCE_DEFS.map(c => `<button class="cadence-pill${state.activeCadence === c.key ? ' active' : ''}" data-cadence="${c.key}">${c.label}</button>`).join('')}</div>`;
+  const html = `<div class="cadence-pills no-print">${CADENCE_DEFS.map(c => `<button class="cadence-pill${state.activeCadence === c.key ? ' active' : ''}" data-cadence="${c.key}">${c.label}</button>`).join('')}</div>`;
   document.getElementById(containerId).innerHTML = html;
   document.querySelectorAll(`#${containerId} [data-cadence]`).forEach(btn => btn.addEventListener('click', () => {
     state.activeCadence = btn.dataset.cadence;
@@ -512,20 +541,64 @@ async function loadPeriods() {
   renderPeriodsList();
 }
 
+function fmtDeltaCell(curr, prev, invert) {
+  const d = pctDelta(curr, prev);
+  if (d === null) return '<span class="delta delta-neutral">—</span>';
+  const favorable = invert ? -d : d;
+  const cls = favorable >= 0 ? 'delta-pos' : 'delta-neg';
+  return `<span class="delta ${cls}">${(d >= 0 ? '+' : '') + (d * 100).toFixed(1)}%</span>`;
+}
+
 function renderPeriodsList() {
   const wrap = document.getElementById('periods-list');
   wrap.innerHTML = '';
-  const list = periodsForCadence(state.activeCadence);
+  const list = periodsForCadence(state.activeCadence).slice().reverse(); // cronológico, mais antigo primeiro
   if (list.length === 0) { wrap.innerHTML = '<div class="empty-hint">Nenhum período cadastrado nessa cadência ainda.</div>'; return; }
-  list.forEach(p => {
+
+  const rows = list.map((p, i) => {
     const agg = aggregateMarketing(state.entriesByPeriod[p.id] || []);
-    const el = document.createElement('div');
-    el.className = 'row-card';
-    el.innerHTML = `<div><div class="rtitle">${escapeHtml(p.period_label)}</div>
-      <div class="rsub">${fmtDate(p.period_start)} — ${fmtDate(p.period_end)} · Investimento ${fmtMoney(agg.spend)} · ${p.sales} venda(s)</div></div>`;
-    el.addEventListener('click', () => openPeriodDetail(p.id));
-    wrap.appendChild(el);
+    const ctr = safeDiv(agg.clicks, agg.impressions);
+    const cpc = safeDiv(agg.spend, agg.clicks);
+    const costPerConv = safeDiv(agg.spend, agg.leads);
+    const prevP = i > 0 ? list[i - 1] : null;
+    const prevAgg = prevP ? aggregateMarketing(state.entriesByPeriod[prevP.id] || []) : null;
+    const prevCostPerConv = prevAgg ? safeDiv(prevAgg.spend, prevAgg.leads) : null;
+    return { p, agg, ctr, cpc, costPerConv, prevAgg, prevCostPerConv };
   });
+
+  const html = `
+    <div class="wide-table-wrap"><table class="ptable">
+      <thead><tr>
+        <th>Período</th><th>Início</th><th>Fim</th><th>Investimento</th><th>Impressões</th><th>Cliques</th>
+        <th>Conversões</th><th>CTR</th><th>CPC</th><th>Custo/Conv.</th>
+        <th>Var. Invest.</th><th>Var. Cliques</th><th>Var. Conv.</th><th>Var. Custo/Conv.</th>
+        <th>Vendas</th><th>Receita</th>
+      </tr></thead>
+      <tbody>
+        ${rows.map(r => `
+          <tr class="clickable" data-period-id="${r.p.id}">
+            <td class="plabel">${escapeHtml(r.p.period_label)}</td>
+            <td>${fmtDate(r.p.period_start)}</td>
+            <td>${fmtDate(r.p.period_end)}</td>
+            <td>${fmtMoney(r.agg.spend)}</td>
+            <td>${Math.round(r.agg.impressions).toLocaleString('pt-BR')}</td>
+            <td>${Math.round(r.agg.clicks).toLocaleString('pt-BR')}</td>
+            <td>${Math.round(r.agg.leads).toLocaleString('pt-BR')}</td>
+            <td>${r.ctr !== null ? (r.ctr * 100).toFixed(2) + '%' : '—'}</td>
+            <td>${r.cpc !== null ? fmtMoney(r.cpc) : '—'}</td>
+            <td>${r.costPerConv !== null ? fmtMoney(r.costPerConv) : '—'}</td>
+            <td>${r.prevAgg ? fmtDeltaCell(r.agg.spend, r.prevAgg.spend) : '—'}</td>
+            <td>${r.prevAgg ? fmtDeltaCell(r.agg.clicks, r.prevAgg.clicks) : '—'}</td>
+            <td>${r.prevAgg ? fmtDeltaCell(r.agg.leads, r.prevAgg.leads) : '—'}</td>
+            <td>${r.prevAgg ? fmtDeltaCell(r.costPerConv, r.prevCostPerConv, true) : '—'}</td>
+            <td>${r.p.sales}</td>
+            <td>${fmtMoney(r.p.revenue)}</td>
+          </tr>`).join('')}
+      </tbody>
+    </table></div>
+  `;
+  wrap.innerHTML = html;
+  wrap.querySelectorAll('tr[data-period-id]').forEach(tr => tr.addEventListener('click', () => openPeriodDetail(tr.dataset.periodId)));
 }
 
 document.getElementById('new-period-btn').addEventListener('click', () => openPeriodModal(null));
@@ -631,10 +704,11 @@ function renderEntriesList(periodId) {
   if (entries.length === 0) { wrap.innerHTML = '<div class="empty-hint">Nenhuma mídia cadastrada nesse período ainda.</div>'; return; }
   entries.forEach(e => {
     const cpl = safeDiv(e.spend, e.leads);
+    const ct = e.conversion_type || 'lead';
     const el = document.createElement('div');
     el.className = 'entry-row';
     el.innerHTML = `<div><div class="etitle">${escapeHtml(platformLabelOf(e))}</div>
-      <div class="esub">Investimento ${fmtMoney(e.spend)} · ${e.leads} lead(s)${cpl !== null ? ` · CPL ${fmtMoney(cpl)}` : ''}</div></div>`;
+      <div class="esub">Investimento ${fmtMoney(e.spend)} · ${e.leads} ${CONVERSION_COUNT_LABEL[ct].toLowerCase()}${cpl !== null ? ` · ${CONVERSION_COST_LABEL[ct]} ${fmtMoney(cpl)}` : ''}</div></div>`;
     el.addEventListener('click', () => openEntryModal(e.id));
     wrap.appendChild(el);
   });
@@ -645,6 +719,9 @@ document.getElementById('new-entry-btn').addEventListener('click', () => openEnt
 document.getElementById('entry-platform-input').addEventListener('change', (e) => {
   document.getElementById('entry-custom-name-row').style.display = e.target.value === 'outra' ? 'block' : 'none';
 });
+document.getElementById('entry-conversion-type-input').addEventListener('change', (e) => {
+  document.getElementById('e-leads-label').textContent = CONVERSION_COUNT_LABEL[e.target.value];
+});
 
 function openEntryModal(entryId) {
   state.editingEntryId = entryId;
@@ -654,6 +731,9 @@ function openEntryModal(entryId) {
   document.getElementById('entry-platform-input').value = e ? e.platform : 'google_ads';
   document.getElementById('entry-custom-name-row').style.display = (e && e.platform === 'outra') ? 'block' : 'none';
   document.getElementById('entry-custom-name-input').value = e ? (e.custom_platform_name || '') : '';
+  const convType = e ? (e.conversion_type || 'lead') : 'lead';
+  document.getElementById('entry-conversion-type-input').value = convType;
+  document.getElementById('e-leads-label').textContent = CONVERSION_COUNT_LABEL[convType];
   document.getElementById('e-spend').value = e ? e.spend : '';
   document.getElementById('e-leads').value = e ? e.leads : '';
   document.getElementById('e-impressions').value = e ? e.impressions : '';
@@ -669,6 +749,7 @@ document.getElementById('save-entry-btn').addEventListener('click', async () => 
   if (platform === 'outra' && !customName) { alert('Dê um nome pra essa plataforma.'); return; }
   const payload = {
     platform, custom_platform_name: platform === 'outra' ? customName : null,
+    conversion_type: document.getElementById('entry-conversion-type-input').value,
     spend: num('e-spend'), leads: num('e-leads'), impressions: num('e-impressions'), clicks: num('e-clicks'), views: num('e-views'),
   };
   if (state.editingEntryId) await sb.from('marketing_entries').update(payload).eq('id', state.editingEntryId);
@@ -688,6 +769,12 @@ document.getElementById('delete-entry-btn').addEventListener('click', async () =
 
 /* ---------------- Platform helpers ---------------- */
 
+function dominantConversionType(entries) {
+  if (!entries || entries.length === 0) return 'lead';
+  const counts = {};
+  entries.forEach(e => { const t = e.conversion_type || 'lead'; counts[t] = (counts[t] || 0) + 1; });
+  return Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0];
+}
 function platformKeyOf(entry) { return entry.platform === 'outra' ? ('outra:' + (entry.custom_platform_name || '').trim().toLowerCase()) : entry.platform; }
 function platformLabelOf(entry) { return entry.platform === 'outra' ? (entry.custom_platform_name || 'Outra') : PLATFORM_LABELS[entry.platform]; }
 
@@ -834,7 +921,12 @@ function buildReport() {
     const prevEntries = previous ? (state.entriesByPeriod[previous.id] || []).filter(e => platformKeyOf(e) === key) : [];
     const currAgg = computePlatformDerived(aggregateMarketing(currEntries));
     const prevAgg = previous ? computePlatformDerived(aggregateMarketing(prevEntries)) : null;
-    const metrics = buildMetricsRows(PLATFORM_METRIC_DEFS, currAgg, prevAgg || {});
+    const dominantType = dominantConversionType(currEntries.length ? currEntries : prevEntries);
+    const metrics = buildMetricsRows(PLATFORM_METRIC_DEFS, currAgg, prevAgg || {}).map(m => {
+      if (m.key === 'leads') return { ...m, label: CONVERSION_COUNT_LABEL[dominantType] };
+      if (m.key === 'cpl') return { ...m, label: CONVERSION_COST_LABEL[dominantType] };
+      return m;
+    });
     const trend = ascPeriods.map(p => {
       const entries = (state.entriesByPeriod[p.id] || []).filter(e => platformKeyOf(e) === key);
       const agg = aggregateMarketing(entries);
@@ -846,7 +938,7 @@ function buildReport() {
 
 function renderViewPills() {
   const views = [{ key: 'overview', label: 'Visão geral' }, ...availablePlatformViews()];
-  return `<div class="view-pills">${views.map(v => `<button class="view-pill${state.activeReportView === v.key ? ' active' : ''}" data-view="${v.key}">${escapeHtml(v.label)}</button>`).join('')}</div>`;
+  return `<div class="view-pills no-print">${views.map(v => `<button class="view-pill${state.activeReportView === v.key ? ' active' : ''}" data-view="${v.key}">${escapeHtml(v.label)}</button>`).join('')}</div>`;
 }
 
 function destroyCharts() { activeCharts.forEach(c => { try { c.destroy(); } catch (e) {} }); activeCharts = []; }
@@ -900,7 +992,18 @@ function renderReport() {
       </div>`;
   }
 
+  const client = state.clients.find(c => c.id === state.activeClientId);
+  const cadenceLabel = CADENCE_DEFS.find(c => c.key === state.activeCadence).label;
+
   body.innerHTML = `
+    <div class="print-only">
+      <strong>${escapeHtml(client ? client.name : '')}</strong> — ${cadenceLabel} — ${escapeHtml(report.viewLabel)}<br>
+      Gerado em ${new Date().toLocaleString('pt-BR')}
+    </div>
+    <div class="report-toolbar no-print">
+      <div></div>
+      <button class="btn btn-primary" id="download-pdf-btn">⬇ Baixar PDF</button>
+    </div>
     ${cadenceBar}
     ${renderViewPills()}
     <div class="card-block">
@@ -911,6 +1014,7 @@ function renderReport() {
     <div class="card-block"><table class="mtable"><thead><tr><th>Métrica</th><th>Atual</th><th>Anterior</th><th>Variação</th></tr></thead><tbody>${rows}</tbody></table></div>
     ${report.bullets.length ? `<div class="section-header"><h3>Pontos de atenção</h3></div><div class="bullets">${report.bullets.map(b => `<div class="bullet">${escapeHtml(b)}</div>`).join('')}</div>` : ''}
   `;
+  document.getElementById('download-pdf-btn').addEventListener('click', () => window.print());
 
   renderCadencePills('report-cadence-pills', () => renderReport());
   document.querySelectorAll('[data-view]').forEach(btn => btn.addEventListener('click', () => { state.activeReportView = btn.dataset.view; renderReport(); }));
